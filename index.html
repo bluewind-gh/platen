@@ -153,6 +153,35 @@
         color: rgba(240, 228, 205, 1);
       }
 
+      .new-paper-btn {
+        font-family: "Courier Prime", monospace;
+        font-size: 11px;
+        letter-spacing: 0.04em;
+      }
+
+      .paper-sheet.replacing {
+        animation: replacePaper 0.48s ease-in-out;
+      }
+
+      @keyframes replacePaper {
+        0% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        45% {
+          opacity: 0;
+          transform: translateY(-32px);
+        }
+        55% {
+          opacity: 0;
+          transform: translateY(32px);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
       .wordmark {
         font-family: "Courier Prime", monospace;
         font-size: 13px;
@@ -476,6 +505,9 @@
           <div class="hud-left">
             <button class="hud-btn" id="clearBtn" title="처음 상태로 리셋">
               ←
+            </button>
+            <button class="hud-btn new-paper-btn" id="newPaperBtn" title="새 종이로 바꾸기">
+              새 종이
             </button>
             <span class="wordmark">Platen</span>
           </div>
@@ -1076,6 +1108,41 @@
    ========================================================================= */
       const automata = new HangulAutomata();
       let committedStr = INITIAL_TEXT;
+      const DRAFT_STORAGE_KEY = "platen-draft-v1";
+
+      function saveDraft() {
+        try {
+          localStorage.setItem(
+            DRAFT_STORAGE_KEY,
+            JSON.stringify({
+              committed: committedStr,
+              automata: {
+                cho: automata.cho,
+                jung: automata.jung,
+                jong: automata.jong,
+              },
+            }),
+          );
+        } catch (e) {}
+      }
+
+      function loadDraft() {
+        try {
+          const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
+          if (!saved) return false;
+
+          const draft = JSON.parse(saved);
+          if (typeof draft.committed !== "string") return false;
+
+          committedStr = draft.committed;
+          automata.cho = draft.automata?.cho || "";
+          automata.jung = draft.automata?.jung || "";
+          automata.jong = draft.automata?.jong || "";
+          return true;
+        } catch (e) {
+          return false;
+        }
+      }
 
       const desk = document.getElementById("desk");
       const committedEl = document.getElementById("committedText");
@@ -1086,6 +1153,7 @@
       const typeGuide = document.getElementById("typeGuide");
       const charCountEl = document.getElementById("charCount");
       const lineCountEl = document.getElementById("lineCount");
+      const newPaperBtn = document.getElementById("newPaperBtn");
 
       // T자 활자 타격 애니메이션
       function triggerStrike() {
@@ -1099,6 +1167,7 @@
         const comp = automata.getComposingChar();
         committedEl.textContent = committedStr;
         composingEl.textContent = comp;
+        saveDraft();
 
         const totalLen = committedStr.length + (comp ? 1 : 0);
         charCountEl.textContent = totalLen.toLocaleString();
@@ -1171,6 +1240,43 @@
           committedStr += res.committed;
         }
         updateScreen();
+      }
+
+      async function copyCurrentText(text) {
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch (e) {
+          window.prompt("현재 글입니다. 전체 선택 후 복사하세요.", text);
+        }
+      }
+
+      function startNewPaper() {
+        stopDemo();
+        const currentText = committedStr + automata.getComposingChar();
+
+        if (currentText) {
+          const shouldCopy = window.confirm(
+            "현재 글을 클립보드에 복사하시겠습니까?\n취소를 누르면 복사하지 않고 새 종이로 바뀝니다.",
+          );
+          if (shouldCopy) copyCurrentText(currentText);
+        }
+
+        newPaperBtn.disabled = true;
+        paperSheet.classList.remove("replacing");
+        void paperSheet.offsetWidth;
+        paperSheet.classList.add("replacing");
+
+        window.setTimeout(() => {
+          automata.reset();
+          committedStr = "";
+          updateScreen();
+        }, 230);
+
+        window.setTimeout(() => {
+          paperSheet.classList.remove("replacing");
+          newPaperBtn.disabled = false;
+          desk.focus();
+        }, 480);
       }
 
       /* =========================================================================
@@ -1381,6 +1487,8 @@
         desk.focus();
       });
 
+      newPaperBtn.addEventListener("click", startNewPaper);
+
       // 종이를 클릭하면 데모를 멈추고 바로 타이핑할 수 있게 포커스를 준다
       paperViewport.addEventListener("click", () => {
         sound.init();
@@ -1394,9 +1502,15 @@
       window.addEventListener("resize", () => updateScreen());
 
       // 초기 실행
+      const restoredDraft = loadDraft();
       updateScreen();
       desk.focus();
-      startDemo(false);
+      if (restoredDraft) {
+        isDemoRunning = false;
+        demoToggleBtn.textContent = "자동 타이핑 ▶";
+      } else {
+        startDemo(false);
+      }
     </script>
   </body>
 </html>
